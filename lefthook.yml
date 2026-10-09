@@ -16,6 +16,4 @@ pre-push:
     build:
       run: pnpm build
     test:
-      run: |
-        pnpm exec playwright install
-        pnpm test
+      run: pnpm test

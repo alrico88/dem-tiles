@@ -1,7 +1,7 @@
 es6
 *.inp
-playwright-report/
-test-results/
+.vitest/
+__screenshots__/
 .DS_Store
 docs/
 

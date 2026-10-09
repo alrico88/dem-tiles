@@ -12,6 +12,9 @@ Decode elevation from Terrain RGB and Terrarium raster tile sets by longitude an
 - **O(1) pixel lookup** — computes RGBA byte offset directly, no intermediate `Array<[r,g,b,a]>` allocation.
 - **In-flight request deduplication** — multiple lookups on the same tile share one fetch + decode promise.
 - **Batch `getElevations`** — group coordinates by tile to minimize fetch/decode work.
+- **Exact pixel lookup** — tile and pixel come from the same Web Mercator projection, so lookups are accurate at any zoom, on tile edges and for TMS.
+- **Raw decoding** — color management and alpha premultiplication are disabled, so tiles with gamma or ICC metadata decode to their true values.
+- **Pluggable decoder** — pass `decode` to use the library outside the browser.
 
 ## Install
 
@@ -22,25 +25,28 @@ npm i dem-tiles
 ## Usage
 
 ```ts
-import { TerrainRGB, Terrarium } from "dem-tiles";
+import { TerrainRGB, Terrarium, type DecodedTile } from "dem-tiles";
 import { LRUCache } from "lru-cache";
 
 const url = "https://wasac.github.io/rw-terrain/tiles/{z}/{x}/{y}.png";
-const tileCache = new LRUCache<string, Uint8Array | undefined>({ max: 500 });
+const tileCache = new LRUCache<string, DecodedTile>({ max: 500 });
 
 // Default: nearest-neighbor sampling
-const trgb = new TerrainRGB(url, 512, 5, 15, false, { tileCache });
+const trgb = new TerrainRGB(url, { tileCache });
 const elevation = await trgb.getElevation([30.0529622, -1.9575129], 15);
 
 // Median filter sampling (3x3 window)
-const trgbMedian = new TerrainRGB(url, 512, 5, 15, false, {
+const trgbMedian = new TerrainRGB(url, {
   tileCache,
   sampling: "median",
   sampleRadius: 1,
 });
 
 // Terrarium tileset
-const terrarium = new Terrarium(url, 512, 5, 15, false, { tileCache });
+const terrarium = new Terrarium(
+  "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+  { maxzoom: 17, tileCache },
+);
 
 // Batch lookup — coordinates sharing the same tile reuse one decoded buffer
 const elevations = await trgb.getElevations(
@@ -52,30 +58,70 @@ const elevations = await trgb.getElevations(
 );
 ```
 
-TMS tiles are supported by passing `true` as the 5th argument:
+TMS tilesets need `tms: true`:
 
 ```ts
-const trgb = new TerrainRGB(url, 512, 5, 15, true);
+const trgb = new TerrainRGB(url, { tms: true });
 ```
 
-If a tile cannot be found, the method returns `undefined` (404s are handled gracefully). Both PNG and WebP formats are supported.
+Tile size is read from each decoded image, so 256 and 512 px tilesets work alike.
+
+If a tile cannot be found (404, 204 or an empty body), the method returns `undefined`, and the miss is cached too. Other HTTP errors and undecodable images reject. Any format the browser can decode works (PNG, WebP, Mapbox `.pngraw`…), with or without an extension in the URL.
+
+### Outside the browser
+
+The default decoder needs `createImageBitmap` and a canvas. Elsewhere, pass your own:
+
+```ts
+import { decode } from "fast-png";
+
+const trgb = new TerrainRGB(url, {
+  decode: async (blob) => {
+    const png = decode(new Uint8Array(await blob.arrayBuffer()));
+    return {
+      data: png.data as Uint8Array,
+      width: png.width,
+      height: png.height,
+    };
+  },
+});
+```
+
+The decoder must return RGBA pixels.
+
+## Migrating from 2.x
+
+The positional `tileSize`, `minzoom`, `maxzoom` and `tms` arguments are gone. `tileSize` is no longer needed; the rest moved into `options`:
+
+```ts
+// 2.x
+new TerrainRGB(url, 512, 5, 15, true, { tileCache });
+// 3.x
+new TerrainRGB(url, { minzoom: 5, maxzoom: 15, tms: true, tileCache });
+```
+
+Cache values are now `DecodedTile` (`LRUCache<string, DecodedTile>`), and undecodable tiles reject instead of resolving to `undefined`.
 
 ## API
 
 ### `TerrainRGB` / `Terrarium`
 
 ```
-new TerrainRGB(url, tileSize, minzoom, maxzoom, tms, options?)
-new Terrarium(url, tileSize, minzoom, maxzoom, tms, options?)
+new TerrainRGB(url, options?)
+new Terrarium(url, options?)
 ```
 
 ### `BaseTileOptions`
 
-| Option         | Type                                        | Default     | Description                              |
-| -------------- | ------------------------------------------- | ----------- | ---------------------------------------- |
-| `tileCache`    | `LRUCache<string, Uint8Array \| undefined>` | —           | External LRU for decoded tile data       |
-| `sampling`     | `"nearest" \| "median"`                     | `"nearest"` | Pixel sampling strategy                  |
-| `sampleRadius` | `number`                                    | `1`         | Pixel radius for median window (1 = 3x3) |
+| Option         | Type                                   | Default     | Description                              |
+| -------------- | -------------------------------------- | ----------- | ---------------------------------------- |
+| `minzoom`      | `number`                               | `5`         | Lowest zoom; requests below are clamped  |
+| `maxzoom`      | `number`                               | `15`        | Highest zoom; requests above are clamped |
+| `tms`          | `boolean`                              | `false`     | TMS (bottom-left origin) y axis          |
+| `tileCache`    | `TileCache` (e.g. `Map`, `LRUCache`)   | —           | Cache for decoded tiles, keyed by URL    |
+| `sampling`     | `"nearest" \| "median"`                | `"nearest"` | Pixel sampling strategy                  |
+| `sampleRadius` | `number`                               | `1`         | Pixel radius for median window (1 = 3x3) |
+| `decode`       | `(blob: Blob) => Promise<DecodedTile>` | canvas      | Turns a fetched tile into RGBA pixels    |
 
 ### Methods
 

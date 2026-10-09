@@ -1,64 +1,13 @@
-import { BaseTile, type BaseTileOptions } from "./base";
+import { BaseTile } from "./base";
 
 /**
- * Terrarium class implementation
+ * Terrarium encoded tiles, rounded to whole metres.
  */
 export class Terrarium extends BaseTile {
   /**
-   * Constructor
-   * @param url URL for terrarium raster tilesets
-   * @param tileSize size of tile. 256 or 512
-   * @param tms whether it is Tile Map Service
-   * @param minzoom minzoom for terrain RGB raster tilesets. default is 5
-   * @param maxzoom maxzoom for terrain RGB raster tilesets. default is 15
-   */
-  constructor(
-    url: string,
-    tileSize: number,
-    minzoom = 5,
-    maxzoom = 15,
-    tms = false,
-    options?: BaseTileOptions,
-  ) {
-    super(url, tileSize, minzoom, maxzoom, tms, options);
-  }
-
-  /**
-   * Get an altitude calculated from terrain RGB information
-   * @param lnglat coordinates
-   * @param z zoom level
-   * @returns an altitude calculated from terrain RGB information
-   */
-  public async getElevation(lnglat: number[], z: number): Promise<number | undefined> {
-    const height = await this.getValue(lnglat, z);
-    return height;
-  }
-
-  /**
-   * Get altitudes for multiple coordinates at one zoom level.
-   * Coordinates belonging to the same tile share fetch, decode, and cache work.
-   * @param lnglats coordinates
-   * @param z zoom level
-   * @returns altitudes calculated from terrarium information
-   */
-  public async getElevations(
-    lnglats: number[][],
-    z: number,
-  ): Promise<Array<number | undefined>> {
-    return this.getValues(lnglats, z);
-  }
-
-  /**
-   * Formula for calculating an elevation from RGB
    * https://github.com/tilezen/joerd/blob/master/docs/formats.md#terrarium
-   * @param r red
-   * @param g green
-   * @param b blue
-   * @param a alpha
-   * @returns an elevation calculated
    */
-  protected calc(r: number, g: number, b: number, _a: number): number {
-    const elev = r * 256 + g + b / 256 - 32768;
-    return parseInt(elev.toFixed(0));
+  protected calc(r: number, g: number, b: number): number {
+    return Math.round(r * 256 + g + b / 256 - 32768);
   }
 }
