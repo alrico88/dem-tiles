@@ -1,6 +1,6 @@
 {
   "name": "dem-tiles",
-  "version": "2.1.1",
+  "version": "3.0.0",
   "description": "Decode elevation from Terrain RGB and Terrarium raster tilesets by longitude and latitude. Fork of @watergis/terrain-rgb.",
   "type": "module",
   "main": "dist/dem-tiles.umd.js",
