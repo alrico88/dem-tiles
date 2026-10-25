@@ -28,6 +28,7 @@
     "release": "changeset publish",
     "typedoc": "typedoc --entryPointStrategy Expand src/lib --out docs",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:unit": "vitest run --project unit",
     "test:browser": "vitest run --project \"browser*\""
   },
@@ -65,6 +66,7 @@
     "@typescript-eslint/eslint-plugin": "^8.23.0",
     "@typescript-eslint/parser": "^8.23.0",
     "@vitest/browser-playwright": "5.0.3",
+    "@vitest/coverage-v8": "5.0.3",
     "canvas": "^3.1.0",
     "eslint": "^9.20.0",
     "eslint-config-prettier": "^10.0.1",
@@ -72,7 +74,6 @@
     "globals": "^15.14.0",
     "lefthook": "^1.10.10",
     "lru-cache": "^11.3.5",
-    "math-helper-functions": "^4.0.0",
     "p-memoize": "^8.0.0",
     "playwright": "^1.64.0",
     "png-chunks-encode": "^1.0.0",

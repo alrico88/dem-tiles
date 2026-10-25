@@ -119,9 +119,16 @@ new Terrarium(url, options?)
 | `maxzoom`      | `number`                               | `15`        | Highest zoom; requests above are clamped |
 | `tms`          | `boolean`                              | `false`     | TMS (bottom-left origin) y axis          |
 | `tileCache`    | `TileCache` (e.g. `Map`, `LRUCache`)   | —           | Cache for decoded tiles, keyed by URL    |
-| `sampling`     | `"nearest" \| "median"`                | `"nearest"` | Pixel sampling strategy                  |
+| `sampling`     | `"nearest" \| "median" \| "bilinear"`  | `"nearest"` | Pixel sampling strategy                  |
 | `sampleRadius` | `number`                               | `1`         | Pixel radius for median window (1 = 3x3) |
 | `decode`       | `(blob: Blob) => Promise<DecodedTile>` | canvas      | Turns a fetched tile into RGBA pixels    |
+
+Use `sampling: "bilinear"` for a weighted interpolation of the four neighboring
+pixel heights, measured from pixel centers. Sampling crosses tile boundaries
+(wrapping at the antimeridian) and can fetch up to four tiles per coordinate.
+Missing or transparent neighbors are ignored and the remaining weights are
+renormalized; no valid neighbors means `undefined`. If the coordinate's own tile
+is missing, the result is also `undefined`. `sampleRadius` only affects `median`.
 
 ### Methods
 
