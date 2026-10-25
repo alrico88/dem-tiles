@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vite-plus/test";
 import { TerrainRGB, Terrarium } from "../../src/lib";
 import {
   decodePng,
@@ -34,12 +34,9 @@ describe.for([
       ),
     });
     const tile = new Tile(url, options);
-    expect(
-      await tile.getElevation(pixelCenter([0, 0, 1], 0.25, 0.25, 2), 1),
-    ).toBeCloseTo(75);
-    expect(
-      await tile.getElevation(pixelCenter([0, 0, 1], 1, 1, 2), 1),
-    ).toBeCloseTo(300);
+
+    expect(await tile.getElevation(pixelCenter([0, 0, 1], 0.25, 0.25, 2), 1)).toBeCloseTo(75);
+    expect(await tile.getElevation(pixelCenter([0, 0, 1], 1, 1, 2), 1)).toBeCloseTo(300);
   });
 
   test.for([
@@ -53,26 +50,24 @@ describe.for([
       next: "https://tiles/1/0/1",
       at: (o: number) => [0, 1.5 + o],
     },
-  ])(
-    "is continuous across the $edge tile edge",
-    async ({ next, at }, { expect }) => {
-      mockFetch({ "https://tiles/1/0/0": png(100), [next]: png(300) });
-      const tile = new Tile(url, options);
-      for (const offset of [-0.0001, 0, 0.0001]) {
-        const [px, py] = at(offset);
-        expect(
-          await tile.getElevation(pixelCenter([0, 0, 1], px, py, 2), 1),
-        ).toBeCloseTo(200 + offset * 200);
-      }
-    },
-  );
+  ])("is continuous across the $edge tile edge", async ({ next, at }, { expect }) => {
+    mockFetch({ "https://tiles/1/0/0": png(100), [next]: png(300) });
+    const tile = new Tile(url, options);
+
+    for (const offset of [-0.0001, 0, 0.0001]) {
+      const [px, py] = at(offset);
+
+      expect(await tile.getElevation(pixelCenter([0, 0, 1], px, py, 2), 1)).toBeCloseTo(
+        200 + offset * 200,
+      );
+    }
+  });
 
   test("returns undefined when the target tile is missing", async () => {
     mockFetch({});
     const tile = new Tile(url, options);
-    expect(
-      await tile.getElevation(pixelCenter([0, 0, 1], 0, 0, 2), 1),
-    ).toBeUndefined();
+
+    expect(await tile.getElevation(pixelCenter([0, 0, 1], 0, 0, 2), 1)).toBeUndefined();
   });
 
   test.for([false, true])(
@@ -87,6 +82,7 @@ describe.for([
       const tile = new Tile(url, { ...options, tms });
       const coord = pixelCenter([0, 0, 1], 1.5, 1.5, 2);
       const values = await tile.getElevations([coord, coord], 1);
+
       values.forEach((value) => expect(value).toBeCloseTo(150));
       expect(fetch).toHaveBeenCalledTimes(4);
     },
@@ -102,6 +98,7 @@ describe.for([
       [pixelCenter([0, 0, 1], 1.25, 0, 2), pixelCenter([1, 0, 1], -0.25, 0, 2)],
       1,
     );
+
     expect(values[0]).toBeCloseTo(150);
     expect(values[1]).toBeCloseTo(250);
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -115,12 +112,9 @@ describe.for([
       ),
     });
     const tile = new Tile(url, options);
-    expect(
-      await tile.getElevation(pixelCenter([1, 1, 1], -0.25, -0.25, 2), 1),
-    ).toBeCloseTo(80);
-    expect(
-      await tile.getElevation(pixelCenter([1, 1, 1], 1, 1, 2), 1),
-    ).toBeUndefined();
+
+    expect(await tile.getElevation(pixelCenter([1, 1, 1], -0.25, -0.25, 2), 1)).toBeCloseTo(80);
+    expect(await tile.getElevation(pixelCenter([1, 1, 1], 1, 1, 2), 1)).toBeUndefined();
   });
 
   test("wraps longitude at the antimeridian", async () => {
@@ -129,17 +123,15 @@ describe.for([
       "https://tiles/1/1/1": png(300),
     });
     const tile = new Tile(url, options);
-    expect(
-      await tile.getElevation(pixelCenter([0, 1, 1], -0.5, 0, 2), 1),
-    ).toBeCloseTo(200);
+
+    expect(await tile.getElevation(pixelCenter([0, 1, 1], -0.5, 0, 2), 1)).toBeCloseTo(200);
   });
 
   test("uses available pixels at the northern world edge", async () => {
     const fetch = mockFetch({ "https://tiles/1/0/0": png(100) });
     const tile = new Tile(url, options);
-    expect(
-      await tile.getElevation(pixelCenter([0, 0, 1], 0, -0.25, 2), 1),
-    ).toBeCloseTo(100);
+
+    expect(await tile.getElevation(pixelCenter([0, 0, 1], 0, -0.25, 2), 1)).toBeCloseTo(100);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,7 +3,6 @@ es6
 .vitest/
 __screenshots__/
 .DS_Store
-docs/
 
 # Logs
 logs

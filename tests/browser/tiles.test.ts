@@ -1,12 +1,11 @@
-import { describe, test } from "vitest";
+import { describe, test } from "vite-plus/test";
 import { TerrainRGB, Terrarium } from "../../src/lib";
 import { madrid, rwanda } from "../fixtures/points";
 
 /**
  * Tile template served from tests/fixtures. Refresh with `node tests/fixtures/download.mjs`.
  */
-const fixture = (name: string, ext: string) =>
-  `/tests/fixtures/${name}/{z}/{x}/{y}.${ext}`;
+const fixture = (name: string, ext: string) => `/tests/fixtures/${name}/{z}/{x}/{y}.${ext}`;
 
 describe("real tiles", () => {
   test.for([
@@ -14,9 +13,8 @@ describe("real tiles", () => {
     { name: "rw-terrain-webp", ext: "webp" },
   ])("terrain RGB $ext", async ({ name, ext }, { expect }) => {
     const dem = new TerrainRGB(fixture(name, ext));
-    expect(await dem.getElevations(rwanda, 15)).toEqual([
-      1347, 1586, 1997, 1710, 1392,
-    ]);
+
+    expect(await dem.getElevations(rwanda, 15)).toEqual([1347, 1586, 1997, 1710, 1392]);
   });
 
   test.for([
@@ -34,6 +32,7 @@ describe("real tiles", () => {
     },
   ])("terrarium $name", async ({ name, ext, points, expected }, { expect }) => {
     const dem = new Terrarium(fixture(name, ext));
+
     expect(await dem.getElevations(points, 15)).toEqual(expected);
   });
 });

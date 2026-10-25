@@ -43,10 +43,10 @@ const trgbMedian = new TerrainRGB(url, {
 });
 
 // Terrarium tileset
-const terrarium = new Terrarium(
-  "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
-  { maxzoom: 17, tileCache },
-);
+const terrarium = new Terrarium("https://tiles.mapterhorn.com/{z}/{x}/{y}.webp", {
+  maxzoom: 17,
+  tileCache,
+});
 
 // Batch lookup — coordinates sharing the same tile reuse one decoded buffer
 const elevations = await trgb.getElevations(

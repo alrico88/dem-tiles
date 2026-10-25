@@ -35,8 +35,13 @@ for (const { name, url, points } of sets) {
     const [x, y, z] = pointToTile(lng, lat, 15);
     const src = url.replace("{z}", z).replace("{x}", x).replace("{y}", y);
     const res = await fetch(src);
-    if (!res.ok) throw new Error(`${src}: ${res.status}`);
+
+    if (!res.ok) {
+      throw new Error(`${src}: ${res.status}`);
+    }
+
     const dest = join(root, name, src.slice(src.indexOf(`/${z}/${x}/`) + 1));
+
     await mkdir(dirname(dest), { recursive: true });
     await writeFile(dest, new Uint8Array(await res.arrayBuffer()));
     console.log(dest);
