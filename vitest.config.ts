@@ -5,6 +5,10 @@ export default defineConfig({
   test: {
     restoreMocks: true,
     unstubGlobals: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/**"],
+    },
     projects: [
       {
         test: {

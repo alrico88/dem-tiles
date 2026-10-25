@@ -1,9 +1,8 @@
 import { pointToTileFraction } from "@mapbox/tilebelt";
-import { calcMedian } from "math-helper-functions";
 import pMemoize from "p-memoize";
 import Formatter from "string-object-formatter";
 
-export type SamplingMode = "nearest" | "median";
+export type SamplingMode = "nearest" | "median" | "bilinear";
 
 export interface DecodedTile {
   data: Uint8Array | Uint8ClampedArray;
@@ -40,7 +39,8 @@ export interface BaseTileOptions {
   tileCache?: TileCache;
   /**
    * Pixel sampling strategy. "nearest" reads one pixel. "median" returns the
-   * median elevation from a square window around the target pixel.
+   * median elevation from a square window around the target pixel. "bilinear"
+   * interpolates neighboring pixel heights, including across tile boundaries.
    */
   sampling?: SamplingMode;
   /**
@@ -66,6 +66,28 @@ const MISSING_TILE: DecodedTile = {
   width: 0,
   height: 0,
 };
+
+/**
+ * A tile and its eight neighbors, row by row; see `gridIndex`.
+ */
+type TileGrid = DecodedTile[];
+
+const CENTER = 4;
+
+/**
+ * Position in a `TileGrid` of the tile offset by (ox, oy) from the center.
+ */
+function gridIndex(ox: number, oy: number): number {
+  return (oy + 1) * 3 + ox + 1;
+}
+
+/**
+ * Neighbor a bilinear sample at continuous pixel coordinate `p` reaches into:
+ * -1 before the tile, 1 past it, 0 when it stays inside.
+ */
+function edgeOffset(p: number, size: number): number {
+  return p < 0 ? -1 : p > size - 1 ? 1 : 0;
+}
 
 let decodeContext:
   | CanvasRenderingContext2D
@@ -174,6 +196,7 @@ export abstract class BaseTile {
     const tiles = 2 ** zoom;
     const values = new Array<number | undefined>(lnglats.length);
     const groups = new Map<number, PixelRequest[]>();
+    const pending = new Map<number, Promise<DecodedTile>>();
 
     lnglats.forEach(([lng, lat], index) => {
       const [fx, fy] = pointToTileFraction(lng, lat, zoom);
@@ -192,20 +215,15 @@ export abstract class BaseTile {
       Array.from(groups, async ([key, requests]) => {
         const x = key % tiles;
         const y = (key - x) / tiles;
-        const url = urlFormatter.format(this.url, {
-          z: zoom,
-          x,
-          y: this.tms ? tiles - 1 - y : y,
-        });
-        const tile = await this.getTile(url);
+        const tile = await this.tileAt(zoom, x, y, pending);
         if (tile === MISSING_TILE) return;
+        const grid: TileGrid = new Array(9).fill(MISSING_TILE);
+        grid[CENTER] = tile;
+        if (this.sampling === "bilinear") {
+          await this.loadNeighbors(grid, zoom, x, y, requests, pending);
+        }
         for (const { index, fx, fy } of requests) {
-          const px = Math.min(tile.width - 1, Math.floor(fx * tile.width));
-          const py = Math.min(tile.height - 1, Math.floor(fy * tile.height));
-          values[index] =
-            this.sampling === "median" && this.sampleRadius > 0
-              ? this.getMedianValue(tile, px, py)
-              : this.getPixelValue(tile, px, py);
+          values[index] = this.sample(grid, fx, fy);
         }
       }),
     );
@@ -217,6 +235,126 @@ export abstract class BaseTile {
    * Elevation encoded by an RGBA pixel. Implemented by each encoding.
    */
   protected abstract calc(r: number, g: number, b: number, a: number): number;
+
+  /**
+   * Tile (x, y) at a zoom, wrapping x at the antimeridian. Requests within one
+   * batch share `pending`, so each tile is fetched once even without a cache.
+   */
+  private tileAt(
+    zoom: number,
+    x: number,
+    y: number,
+    pending: Map<number, Promise<DecodedTile>>,
+  ): Promise<DecodedTile> {
+    const tiles = 2 ** zoom;
+    if (y < 0 || y >= tiles) return Promise.resolve(MISSING_TILE);
+    const wx = ((x % tiles) + tiles) % tiles;
+    const key = y * tiles + wx;
+    let tile = pending.get(key);
+    if (!tile) {
+      tile = this.getTile(
+        urlFormatter.format(this.url, {
+          z: zoom,
+          x: wx,
+          y: this.tms ? tiles - 1 - y : y,
+        }),
+      );
+      pending.set(key, tile);
+    }
+    return tile;
+  }
+
+  /**
+   * Fetches the neighbors of the grid's center tile that bilinear sampling of
+   * `requests` reaches into.
+   */
+  private async loadNeighbors(
+    grid: TileGrid,
+    zoom: number,
+    x: number,
+    y: number,
+    requests: PixelRequest[],
+    pending: Map<number, Promise<DecodedTile>>,
+  ): Promise<void> {
+    const { width, height } = grid[CENTER];
+    const needed = new Set<number>();
+    for (const { fx, fy } of requests) {
+      const ox = edgeOffset(fx * width - 0.5, width);
+      const oy = edgeOffset(fy * height - 0.5, height);
+      needed.add(gridIndex(ox, 0)).add(gridIndex(0, oy)).add(gridIndex(ox, oy));
+    }
+    needed.delete(CENTER);
+    await Promise.all(
+      Array.from(needed, async (i) => {
+        const ox = (i % 3) - 1;
+        const oy = Math.floor(i / 3) - 1;
+        grid[i] = await this.tileAt(zoom, x + ox, y + oy, pending);
+      }),
+    );
+  }
+
+  /**
+   * Elevation at tile fraction (fx, fy) of the grid's center tile, using the
+   * configured sampling mode.
+   */
+  private sample(grid: TileGrid, fx: number, fy: number): number | undefined {
+    if (this.sampling === "bilinear") {
+      return this.getBilinearValue(grid, fx, fy);
+    }
+    const tile = grid[CENTER];
+    const px = Math.min(tile.width - 1, Math.floor(fx * tile.width));
+    const py = Math.min(tile.height - 1, Math.floor(fy * tile.height));
+    return this.sampling === "median" && this.sampleRadius > 0
+      ? this.getMedianValue(tile, px, py)
+      : this.getPixelValue(tile, px, py);
+  }
+
+  /**
+   * Weighted average of the four pixels around (fx, fy), measured from pixel
+   * centers. Missing or transparent pixels are skipped and the rest renormalized.
+   */
+  private getBilinearValue(
+    grid: TileGrid,
+    fx: number,
+    fy: number,
+  ): number | undefined {
+    const { width, height } = grid[CENTER];
+    const px = fx * width - 0.5;
+    const py = fy * height - 0.5;
+    const left = Math.floor(px);
+    const top = Math.floor(py);
+    const dx = px - left;
+    const dy = py - top;
+    let sum = 0;
+    let totalWeight = 0;
+    for (let j = 0; j < 2; j += 1) {
+      for (let i = 0; i < 2; i += 1) {
+        const weight = (i ? dx : 1 - dx) * (j ? dy : 1 - dy);
+        if (weight === 0) continue;
+        const value = this.getGridValue(grid, left + i, top + j);
+        if (value === undefined) continue;
+        sum += value * weight;
+        totalWeight += weight;
+      }
+    }
+    return totalWeight > 0 ? sum / totalWeight : undefined;
+  }
+
+  /**
+   * Value of a pixel addressed relative to the center tile, possibly in a neighbor.
+   */
+  private getGridValue(
+    grid: TileGrid,
+    px: number,
+    py: number,
+  ): number | undefined {
+    const { width, height } = grid[CENTER];
+    const ox = px < 0 ? -1 : px >= width ? 1 : 0;
+    const oy = py < 0 ? -1 : py >= height ? 1 : 0;
+    const tile = grid[gridIndex(ox, oy)];
+    if (tile === MISSING_TILE) return undefined;
+    return this.getPixelValue(tile, px - ox * width, py - oy * height);
+  }
 
   /**
    * Fetches and decodes a tile. 404, 204 and empty responses yield `MISSING_TILE`.
@@ -267,6 +405,11 @@ export abstract class BaseTile {
         if (value !== undefined) values.push(value);
       }
     }
-    return calcMedian(values);
+    if (values.length === 0) return undefined;
+    values.sort((a, b) => a - b);
+    const mid = values.length >> 1;
+    return values.length % 2
+      ? values[mid]
+      : (values[mid - 1] + values[mid]) / 2;
   }
 }

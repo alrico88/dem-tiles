@@ -80,6 +80,12 @@ describe("pixel lookup", () => {
     expect(indexToPixel(elevation, size)).toEqual({ x: 100, y: 200 });
   });
 
+  test("latitudes beyond Web Mercator are undefined without fetching", async () => {
+    const fetch = mockFetch({});
+    expect(await terrainRGB().getElevation([0, 89], 10)).toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   test("clamps zoom to maxzoom", async () => {
     const fetch = mockFetch({});
     const dem = terrainRGB({ maxzoom: 12 });
@@ -141,6 +147,18 @@ describe("decoding", () => {
     expect(
       await terrainRGB({ sampling: "median" }).getElevation(lnglat, 10),
     ).toBe(250);
+  });
+
+  test("median averages the middle pair and skips transparent pixels", async () => {
+    const data = makeTile(SIZE, (x, y) =>
+      y !== 0 ? [0, 0, 0, 0] : terrainRgb(x * 10),
+    );
+    mockFetch({ [tileUrl(tileA)]: toPng(data, SIZE) });
+    const dem = terrainRGB({ sampling: "median" });
+    expect(await dem.getElevation(pixelCenter(tileA, 0, 0, SIZE), 10)).toBe(5);
+    expect(
+      await dem.getElevation(pixelCenter(tileA, 0, 10, SIZE), 10),
+    ).toBeUndefined();
   });
 });
 
