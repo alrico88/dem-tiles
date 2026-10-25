@@ -74,7 +74,7 @@
 </tr>
 <tr>
 <td><code>sampling</code></td>
-<td><code>&quot;nearest&quot; | &quot;median&quot;</code></td>
+<td><code>&quot;nearest&quot; | &quot;median&quot; | &quot;bilinear&quot;</code></td>
 <td><code>&quot;nearest&quot;</code></td>
 <td>Pixel sampling strategy</td>
 </tr>
@@ -92,6 +92,12 @@
 </tr>
 </tbody>
 </table>
+<p>Use <code>sampling: &quot;bilinear&quot;</code> for a weighted interpolation of the four neighboring
+pixel heights, measured from pixel centers. Sampling crosses tile boundaries
+(wrapping at the antimeridian) and can fetch up to four tiles per coordinate.
+Missing or transparent neighbors are ignored and the remaining weights are
+renormalized; no valid neighbors means <code>undefined</code>. If the coordinate's own tile
+is missing, the result is also <code>undefined</code>. <code>sampleRadius</code> only affects <code>median</code>.</p>
 <a id="methods" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Methods<a href="#methods" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><ul>
 <li><code>getElevation([lng, lat], zoom)</code> → <code>Promise&lt;number | undefined&gt;</code></li>
 <li><code>getElevations([[lng,lat], ...], zoom)</code> → <code>Promise&lt;Array&lt;number | undefined&gt;&gt;</code></li>
