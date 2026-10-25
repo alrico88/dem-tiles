@@ -1,21 +1,11 @@
 {
   "compilerOptions": {
-    "alwaysStrict": true,
-    "baseUrl": ".",
-    "emitDeclarationOnly": true,
-    "declaration": true,
-    "declarationMap": true,
-    "declarationDir": "./dist/types",
-    "experimentalDecorators": true,
     "lib": ["dom", "ESNext"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "outDir": "./dist",
-    "preserveConstEnums": true,
-    "removeComments": true,
-    "sourceMap": true,
     "target": "ESNext",
-    "esModuleInterop": true,
+    "strict": true,
+    "noEmit": true,
     "skipLibCheck": true
   },
   "include": ["src/lib"]

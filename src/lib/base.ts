@@ -89,10 +89,7 @@ function edgeOffset(p: number, size: number): number {
   return p < 0 ? -1 : p > size - 1 ? 1 : 0;
 }
 
-let decodeContext:
-  | CanvasRenderingContext2D
-  | OffscreenCanvasRenderingContext2D
-  | null = null;
+let decodeContext: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
 
 /**
  * Decodes an image with the browser, skipping color management and alpha
@@ -103,23 +100,38 @@ async function decodeWithCanvas(blob: Blob): Promise<DecodedTile> {
     colorSpaceConversion: "none",
     premultiplyAlpha: "none",
   });
+
   try {
     const { width, height } = bitmap;
+
     if (!decodeContext) {
       const canvas =
         typeof OffscreenCanvas !== "undefined"
           ? new OffscreenCanvas(width, height)
           : document.createElement("canvas");
+
       decodeContext = canvas.getContext("2d", {
         willReadFrequently: true,
       }) as typeof decodeContext;
-      if (!decodeContext) throw new Error("Failed to create canvas context");
+
+      if (!decodeContext) {
+        throw new Error("Failed to create canvas context");
+      }
     }
+
     const { canvas } = decodeContext;
-    if (canvas.width !== width) canvas.width = width;
-    if (canvas.height !== height) canvas.height = height;
+
+    if (canvas.width !== width) {
+      canvas.width = width;
+    }
+
+    if (canvas.height !== height) {
+      canvas.height = height;
+    }
+
     decodeContext.clearRect(0, 0, width, height);
     decodeContext.drawImage(bitmap, 0, 0);
+
     return {
       data: decodeContext.getImageData(0, 0, width, height).data,
       width,
@@ -175,10 +187,7 @@ export abstract class BaseTile {
    * @param lnglat [lng, lat]
    * @param z zoom level, clamped to the tileset range
    */
-  public async getElevation(
-    lnglat: number[],
-    z: number,
-  ): Promise<number | undefined> {
+  public async getElevation(lnglat: number[], z: number): Promise<number | undefined> {
     return (await this.getElevations([lnglat], z))[0];
   }
 
@@ -188,27 +197,32 @@ export abstract class BaseTile {
    * @param lnglats list of [lng, lat]
    * @param z zoom level, clamped to the tileset range
    */
-  public async getElevations(
-    lnglats: number[][],
-    z: number,
-  ): Promise<Array<number | undefined>> {
+  public async getElevations(lnglats: number[][], z: number): Promise<Array<number | undefined>> {
     const zoom = Math.min(this.maxzoom, Math.max(this.minzoom, Math.floor(z)));
     const tiles = 2 ** zoom;
-    const values = new Array<number | undefined>(lnglats.length);
+    const values: Array<number | undefined> = Array.from({ length: lnglats.length });
     const groups = new Map<number, PixelRequest[]>();
     const pending = new Map<number, Promise<DecodedTile>>();
 
     lnglats.forEach(([lng, lat], index) => {
       const [fx, fy] = pointToTileFraction(lng, lat, zoom);
+
       // Beyond Web Mercator's latitude limits (also catches NaN)
-      if (!(fy >= 0 && fy < tiles)) return;
+      if (!(fy >= 0 && fy < tiles)) {
+        return;
+      }
+
       const x = Math.floor(fx);
       const y = Math.floor(fy);
       const key = y * tiles + x;
       const request = { index, fx: fx - x, fy: fy - y };
       const group = groups.get(key);
-      if (group) group.push(request);
-      else groups.set(key, [request]);
+
+      if (group) {
+        group.push(request);
+      } else {
+        groups.set(key, [request]);
+      }
     });
 
     await Promise.all(
@@ -216,12 +230,19 @@ export abstract class BaseTile {
         const x = key % tiles;
         const y = (key - x) / tiles;
         const tile = await this.tileAt(zoom, x, y, pending);
-        if (tile === MISSING_TILE) return;
-        const grid: TileGrid = new Array(9).fill(MISSING_TILE);
+
+        if (tile === MISSING_TILE) {
+          return;
+        }
+
+        const grid: TileGrid = Array.from({ length: 9 }, () => MISSING_TILE);
+
         grid[CENTER] = tile;
+
         if (this.sampling === "bilinear") {
           await this.loadNeighbors(grid, zoom, x, y, requests, pending);
         }
+
         for (const { index, fx, fy } of requests) {
           values[index] = this.sample(grid, fx, fy);
         }
@@ -247,10 +268,15 @@ export abstract class BaseTile {
     pending: Map<number, Promise<DecodedTile>>,
   ): Promise<DecodedTile> {
     const tiles = 2 ** zoom;
-    if (y < 0 || y >= tiles) return Promise.resolve(MISSING_TILE);
+
+    if (y < 0 || y >= tiles) {
+      return Promise.resolve(MISSING_TILE);
+    }
+
     const wx = ((x % tiles) + tiles) % tiles;
     const key = y * tiles + wx;
     let tile = pending.get(key);
+
     if (!tile) {
       tile = this.getTile(
         urlFormatter.format(this.url, {
@@ -261,6 +287,7 @@ export abstract class BaseTile {
       );
       pending.set(key, tile);
     }
+
     return tile;
   }
 
@@ -278,16 +305,20 @@ export abstract class BaseTile {
   ): Promise<void> {
     const { width, height } = grid[CENTER];
     const needed = new Set<number>();
+
     for (const { fx, fy } of requests) {
       const ox = edgeOffset(fx * width - 0.5, width);
       const oy = edgeOffset(fy * height - 0.5, height);
+
       needed.add(gridIndex(ox, 0)).add(gridIndex(0, oy)).add(gridIndex(ox, oy));
     }
+
     needed.delete(CENTER);
     await Promise.all(
       Array.from(needed, async (i) => {
         const ox = (i % 3) - 1;
         const oy = Math.floor(i / 3) - 1;
+
         grid[i] = await this.tileAt(zoom, x + ox, y + oy, pending);
       }),
     );
@@ -301,9 +332,11 @@ export abstract class BaseTile {
     if (this.sampling === "bilinear") {
       return this.getBilinearValue(grid, fx, fy);
     }
+
     const tile = grid[CENTER];
     const px = Math.min(tile.width - 1, Math.floor(fx * tile.width));
     const py = Math.min(tile.height - 1, Math.floor(fy * tile.height));
+
     return this.sampling === "median" && this.sampleRadius > 0
       ? this.getMedianValue(tile, px, py)
       : this.getPixelValue(tile, px, py);
@@ -313,11 +346,7 @@ export abstract class BaseTile {
    * Weighted average of the four pixels around (fx, fy), measured from pixel
    * centers. Missing or transparent pixels are skipped and the rest renormalized.
    */
-  private getBilinearValue(
-    grid: TileGrid,
-    fx: number,
-    fy: number,
-  ): number | undefined {
+  private getBilinearValue(grid: TileGrid, fx: number, fy: number): number | undefined {
     const { width, height } = grid[CENTER];
     const px = fx * width - 0.5;
     const py = fy * height - 0.5;
@@ -327,32 +356,42 @@ export abstract class BaseTile {
     const dy = py - top;
     let sum = 0;
     let totalWeight = 0;
+
     for (let j = 0; j < 2; j += 1) {
       for (let i = 0; i < 2; i += 1) {
         const weight = (i ? dx : 1 - dx) * (j ? dy : 1 - dy);
-        if (weight === 0) continue;
+
+        if (weight === 0) {
+          continue;
+        }
+
         const value = this.getGridValue(grid, left + i, top + j);
-        if (value === undefined) continue;
+
+        if (value === undefined) {
+          continue;
+        }
+
         sum += value * weight;
         totalWeight += weight;
       }
     }
+
     return totalWeight > 0 ? sum / totalWeight : undefined;
   }
 
   /**
    * Value of a pixel addressed relative to the center tile, possibly in a neighbor.
    */
-  private getGridValue(
-    grid: TileGrid,
-    px: number,
-    py: number,
-  ): number | undefined {
+  private getGridValue(grid: TileGrid, px: number, py: number): number | undefined {
     const { width, height } = grid[CENTER];
     const ox = px < 0 ? -1 : px >= width ? 1 : 0;
     const oy = py < 0 ? -1 : py >= height ? 1 : 0;
     const tile = grid[gridIndex(ox, oy)];
-    if (tile === MISSING_TILE) return undefined;
+
+    if (tile === MISSING_TILE) {
+      return undefined;
+    }
+
     return this.getPixelValue(tile, px - ox * width, py - oy * height);
   }
 
@@ -361,55 +400,67 @@ export abstract class BaseTile {
    */
   private async fetchTile(url: string): Promise<DecodedTile> {
     const res = await fetch(url);
-    if (res.status === 404 || res.status === 204) return MISSING_TILE;
+
+    if (res.status === 404 || res.status === 204) {
+      return MISSING_TILE;
+    }
+
     if (!res.ok) {
       throw new Error(`Failed to fetch tile ${url}: ${res.status}`);
     }
+
     const blob = await res.blob();
-    if (blob.size === 0) return MISSING_TILE;
+
+    if (blob.size === 0) {
+      return MISSING_TILE;
+    }
+
     return this.decode(blob);
   }
 
   /**
    * Value of a single pixel, or undefined when it is transparent.
    */
-  private getPixelValue(
-    tile: DecodedTile,
-    x: number,
-    y: number,
-  ): number | undefined {
+  private getPixelValue(tile: DecodedTile, x: number, y: number): number | undefined {
     const offset = (y * tile.width + x) * 4;
     const { data } = tile;
     const a = data[offset + 3];
-    if (a === 0) return undefined;
+
+    if (a === 0) {
+      return undefined;
+    }
+
     return this.calc(data[offset], data[offset + 1], data[offset + 2], a);
   }
 
   /**
    * Median value of the non-transparent pixels in a window around (x, y).
    */
-  private getMedianValue(
-    tile: DecodedTile,
-    x: number,
-    y: number,
-  ): number | undefined {
+  private getMedianValue(tile: DecodedTile, x: number, y: number): number | undefined {
     const r = this.sampleRadius;
     const minX = Math.max(0, x - r);
     const maxX = Math.min(tile.width - 1, x + r);
     const minY = Math.max(0, y - r);
     const maxY = Math.min(tile.height - 1, y + r);
     const values: number[] = [];
+
     for (let j = minY; j <= maxY; j += 1) {
       for (let i = minX; i <= maxX; i += 1) {
         const value = this.getPixelValue(tile, i, j);
-        if (value !== undefined) values.push(value);
+
+        if (value !== undefined) {
+          values.push(value);
+        }
       }
     }
-    if (values.length === 0) return undefined;
+
+    if (values.length === 0) {
+      return undefined;
+    }
+
     values.sort((a, b) => a - b);
     const mid = values.length >> 1;
-    return values.length % 2
-      ? values[mid]
-      : (values[mid - 1] + values[mid]) / 2;
+
+    return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
   }
 }

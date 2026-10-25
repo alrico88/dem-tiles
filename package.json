@@ -2,40 +2,11 @@
   "name": "dem-tiles",
   "version": "3.0.0",
   "description": "Decode elevation from Terrain RGB and Terrarium raster tilesets by longitude and latitude. Fork of @watergis/terrain-rgb.",
-  "type": "module",
-  "main": "dist/dem-tiles.umd.js",
-  "types": "dist/types/index.d.ts",
-  "module": "dist/dem-tiles.es.js",
-  "exports": {
-    ".": {
-      "types": "./dist/types/index.d.ts",
-      "import": "./dist/dem-tiles.es.js",
-      "require": "./dist/dem-tiles.umd.js"
-    }
+  "homepage": "https://github.com/alrico88/dem-tiles#readme",
+  "bugs": {
+    "url": "https://github.com/alrico88/dem-tiles/issues"
   },
-  "files": [
-    "dist",
-    "!dist/**/*.test.*",
-    "!dist/**/*.spec.*"
-  ],
-  "scripts": {
-    "build": "tsc && vite build",
-    "prepare": "npm run build",
-    "build:cjs": "tsc --project . --module commonjs --outDir ./dist",
-    "build:esm": "tsc --project . --module es2015 --outDir ./es6",
-    "lint": "prettier --check . && eslint .",
-    "format": "prettier --write .",
-    "release": "changeset publish",
-    "typedoc": "typedoc --entryPointStrategy Expand src/lib --out docs",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:unit": "vitest run --project unit",
-    "test:browser": "vitest run --project \"browser*\""
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/alrico88/dem-tiles.git"
-  },
+  "license": "MIT",
   "author": {
     "name": "Jin IGARASHI"
   },
@@ -44,52 +15,66 @@
       "name": "alrico88"
     }
   ],
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/alrico88/dem-tiles/issues"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alrico88/dem-tiles.git"
   },
-  "homepage": "https://github.com/alrico88/dem-tiles#readme",
   "funding": {
     "type": "individual",
     "url": "https://github.com/watergis/terrain-rgb"
   },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/index.umd.js",
+  "jsdelivr": "./dist/index.umd.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "vp pack",
+    "prepare": "vp pack",
+    "release": "changeset publish",
+    "test": "vp test run",
+    "test:coverage": "vp test run --coverage",
+    "test:unit": "vp test run --project unit",
+    "test:browser": "vp test run --project browser"
+  },
   "devDependencies": {
+    "@arethetypeswrong/core": "^0.18.5",
     "@changesets/cli": "^2.27.12",
-    "@eslint/js": "^9.20.0",
     "@mapbox/sphericalmercator": "^2.0.2",
     "@mapbox/tilebelt": "^2.0.3",
-    "@types/buffer-from": "^1.1.3",
+    "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^22.13.1",
-    "@types/pako": "^2.0.3",
     "@types/png-chunks-encode": "^1.0.2",
     "@types/png-chunks-extract": "^1.0.2",
-    "@typescript-eslint/eslint-plugin": "^8.23.0",
-    "@typescript-eslint/parser": "^8.23.0",
-    "@vitest/browser-playwright": "5.0.3",
-    "@vitest/coverage-v8": "5.0.3",
-    "canvas": "^3.1.0",
-    "eslint": "^9.20.0",
-    "eslint-config-prettier": "^10.0.1",
+    "@vitest/browser-playwright": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "fast-png": "^8.0.0",
-    "globals": "^15.14.0",
     "lefthook": "^1.10.10",
     "lru-cache": "^11.3.5",
     "p-memoize": "^8.0.0",
     "playwright": "^1.64.0",
     "png-chunks-encode": "^1.0.0",
     "png-chunks-extract": "^1.0.0",
-    "prettier": "^3.5.0",
     "publint": "^0.3.4",
     "string-object-formatter": "^4.0.1",
-    "typedoc": "^0.27.7",
-    "typescript": "^5.7.3",
-    "typescript-eslint": "^8.23.0",
-    "vite": "^6.4.4",
-    "vitest": "5.0.3"
+    "typescript": "^7.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
-  "packageManager": "pnpm@10.2.1",
   "engines": {
-    "pnpm": "^10.0.0",
     "node": "^22.12.0 || >=24.0.0"
-  }
+  },
+  "packageManager": "pnpm@12.15.0"
 }

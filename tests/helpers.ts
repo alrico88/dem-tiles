@@ -2,7 +2,7 @@ import { SphericalMercator } from "@mapbox/sphericalmercator";
 import { decode, encode } from "fast-png";
 import encodeChunks from "png-chunks-encode";
 import extractChunks from "png-chunks-extract";
-import { vi } from "vitest";
+import { vi } from "vite-plus/test";
 import type { DecodedTile } from "../src/lib";
 
 type Route = Uint8Array | number;
@@ -15,21 +15,22 @@ export function makeTile(
   color: (x: number, y: number) => [number, number, number, number],
 ): Uint8Array {
   const data = new Uint8Array(size * size * 4);
+
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       data.set(color(x, y), (y * size + x) * 4);
     }
   }
+
   return data;
 }
 
 /**
  * Encodes an elevation in metres as Terrain RGB.
  */
-export function terrainRgb(
-  elevation: number,
-): [number, number, number, number] {
+export function terrainRgb(elevation: number): [number, number, number, number] {
   const v = Math.round((elevation + 10000) * 10);
+
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255, 255];
 }
 
@@ -38,12 +39,8 @@ export function terrainRgb(
  */
 export function terrarium(elevation: number): [number, number, number, number] {
   const v = elevation + 32768;
-  return [
-    Math.floor(v / 256),
-    Math.floor(v) % 256,
-    Math.round((v % 1) * 256),
-    255,
-  ];
+
+  return [Math.floor(v / 256), Math.floor(v) % 256, Math.round((v % 1) * 256), 255];
 }
 
 /**
@@ -52,6 +49,7 @@ export function terrarium(elevation: number): [number, number, number, number] {
 export function indexTile(size: number): Uint8Array {
   return makeTile(size, (x, y) => {
     const v = y * size + x;
+
     return [(v >> 16) & 255, (v >> 8) & 255, v & 255, 255];
   });
 }
@@ -60,8 +58,12 @@ export function indexTile(size: number): Uint8Array {
  * Recovers the pixel an elevation read from an `indexTile` came from.
  */
 export function indexToPixel(elevation: number | undefined, size: number) {
-  if (elevation === undefined) return undefined;
+  if (elevation === undefined) {
+    return undefined;
+  }
+
   const v = Math.round((elevation + 10000) * 10);
+
   return { x: v % size, y: Math.floor(v / size) };
 }
 
@@ -75,10 +77,8 @@ export function pixelCenter(
   size: number,
 ): number[] {
   const [x, y, z] = tile;
-  return new SphericalMercator({ size }).ll(
-    [x * size + px + 0.5, y * size + py + 0.5],
-    z,
-  );
+
+  return new SphericalMercator({ size }).ll([x * size + px + 0.5, y * size + py + 0.5], z);
 }
 
 /**
@@ -96,8 +96,13 @@ export function toPng(
     channels: 4,
     depth: 8,
   });
-  if (extraChunks.length === 0) return png;
+
+  if (extraChunks.length === 0) {
+    return png;
+  }
+
   const [ihdr, ...rest] = extractChunks(png);
+
   return encodeChunks([ihdr, ...extraChunks, ...rest]);
 }
 
@@ -106,6 +111,7 @@ export function toPng(
  */
 export async function decodePng(blob: Blob): Promise<DecodedTile> {
   const png = decode(new Uint8Array(await blob.arrayBuffer()));
+
   return { data: png.data as Uint8Array, width: png.width, height: png.height };
 }
 
@@ -113,13 +119,19 @@ export async function decodePng(blob: Blob): Promise<DecodedTile> {
  * Stubs `fetch`: each URL maps to image bytes or an HTTP status. Unknown URLs return 404.
  */
 export function mockFetch(routes: Record<string, Route>) {
-  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+  const fetch = vi.fn(async (input: string | URL) => {
     const route = routes[String(input)] ?? 404;
-    if (typeof route === "number") return new Response(null, { status: route });
+
+    if (typeof route === "number") {
+      return new Response(null, { status: route });
+    }
+
     return new Response(route.slice(), {
       headers: { "content-type": "image/png" },
     });
   });
+
   vi.stubGlobal("fetch", fetch);
+
   return fetch;
 }

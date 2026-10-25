@@ -1,12 +1,6 @@
-import { describe, test } from "vitest";
+import { describe, test } from "vite-plus/test";
 import { TerrainRGB } from "../../src/lib";
-import {
-  makeTile,
-  mockFetch,
-  pixelCenter,
-  terrainRgb,
-  toPng,
-} from "../helpers";
+import { makeTile, mockFetch, pixelCenter, terrainRgb, toPng } from "../helpers";
 
 const SIZE = 256;
 const url = "https://tiles.test/10/600/400.png";
@@ -18,7 +12,9 @@ const data = makeTile(SIZE, (x) => terrainRgb(elevations[Math.floor(x / 64)]));
  */
 function linearGamma() {
   const body = new Uint8Array(4);
+
   new DataView(body.buffer).setUint32(0, 100000);
+
   return { name: "gAMA", data: body };
 }
 
@@ -31,10 +27,8 @@ describe.for([
     async ({ elevation, px }, { expect }) => {
       mockFetch({ [url]: png });
       const dem = new TerrainRGB("https://tiles.test/{z}/{x}/{y}.png");
-      const value = await dem.getElevation(
-        pixelCenter([600, 400, 10], px, 128, SIZE),
-        10,
-      );
+      const value = await dem.getElevation(pixelCenter([600, 400, 10], px, 128, SIZE), 10);
+
       expect(value).toBeCloseTo(elevation, 5);
     },
   );

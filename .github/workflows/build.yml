@@ -1,6 +1,3 @@
-# This workflow will do a clean install of node dependencies, build the source code and run tests across different versions of node
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-nodejs-with-github-actions
-
 name: build
 
 on:
@@ -15,43 +12,16 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  check:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 #v4
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: pnpm
-      - name: install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: lint
-        run: pnpm lint
-
-  build:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [22, 24]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 #v4
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: pnpm
-      - name: install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: build
-        run: |
-          pnpm build
-          pnpm typedoc
+          node-version: 24
+          cache: true
+      - run: vp check
+      - run: vp pack
 
   test:
     timeout-minutes: 60
@@ -61,13 +31,8 @@ jobs:
         node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 #v4
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
           node-version: ${{ matrix.node-version }}
-          cache: pnpm
-      - name: install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Run tests
-        run: pnpm test
+          cache: true
+      - run: vp test run
