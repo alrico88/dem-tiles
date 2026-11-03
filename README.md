@@ -79,7 +79,7 @@ import { decodeTile } from "dem-tiles/decoder";
 const dem = new Terrarium(url, { decode: decodeTile });
 ```
 
-It reads PNG with `fast-png` and WebP with libwebp compiled to WebAssembly (about 50 kB gzip, loaded on the first WebP tile). Both are optional peer dependencies, so install the ones you need:
+It reads PNG with `fast-png` and WebP with libwebp compiled to WebAssembly (about 50 kB gzip). Each is imported on the first tile of its format and both are optional peer dependencies, so install only the formats you use:
 
 ```sh
 pnpm add fast-png @jsquash/webp
