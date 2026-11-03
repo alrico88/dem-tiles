@@ -1,4 +1,3 @@
-import { decode as decodePng } from "fast-png";
 import type { DecodedTile } from "./base";
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47];
@@ -27,6 +26,17 @@ function toRgba(data: ArrayLike<number>, pixels: number, channels: number): Uint
   return rgba;
 }
 
+async function decodePng(bytes: Uint8Array): Promise<DecodedTile> {
+  const { decode } = await import("fast-png");
+  const { data, width, height, channels, depth } = decode(bytes);
+
+  if (depth !== 8) {
+    throw new Error(`Unsupported PNG bit depth ${depth}, expected 8`);
+  }
+
+  return { data: toRgba(data, width * height, channels), width, height };
+}
+
 async function decodeWebp(buffer: ArrayBuffer): Promise<DecodedTile> {
   const { default: decode } = await import("@jsquash/webp/decode.js");
   const { data, width, height } = await decode(buffer);
@@ -37,8 +47,8 @@ async function decodeWebp(buffer: ArrayBuffer): Promise<DecodedTile> {
 /**
  * Decodes a PNG or WebP tile without a canvas, so pixels stay exact where
  * privacy modes (Brave, Safari, Firefox) add noise to canvas reads. PNG uses
- * `fast-png`; WebP uses libwebp in WebAssembly, loaded on the first WebP tile.
- * Both are optional peer dependencies.
+ * `fast-png`; WebP uses libwebp in WebAssembly. Each is loaded on the first tile
+ * of its format, and both are optional peer dependencies.
  *
  * @param blob fetched tile, PNG (8-bit RGB or RGBA) or WebP
  * @returns RGBA pixels with the tile size
@@ -48,13 +58,7 @@ export async function decodeTile(blob: Blob): Promise<DecodedTile> {
   const bytes = new Uint8Array(buffer);
 
   if (startsWith(bytes, PNG_SIGNATURE)) {
-    const { data, width, height, channels, depth } = decodePng(bytes);
-
-    if (depth !== 8) {
-      throw new Error(`Unsupported PNG bit depth ${depth}, expected 8`);
-    }
-
-    return { data: toRgba(data, width * height, channels), width, height };
+    return decodePng(bytes);
   }
 
   if (startsWith(bytes, RIFF) && startsWith(bytes, WEBP, 8)) {
