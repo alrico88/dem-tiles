@@ -1,5 +1,6 @@
+import { encode } from "fast-png";
 import { LRUCache } from "lru-cache";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { TerrainRGB, Terrarium, type BaseTileOptions } from "../../src/lib";
 import {
   decodePng,
@@ -149,6 +150,143 @@ describe("decoding", () => {
   });
 });
 
+describe("getTileElevations", () => {
+  test("rejects invalid coordinates without fetching and treats out-of-range y as missing", async () => {
+    const fetch = mockFetch({});
+    const dem = terrainRGB();
+
+    for (const [z, x, y] of [
+      [-1, 0, 0],
+      [10.5, 0, 0],
+      [NaN, 0, 0],
+      [54, 0, 0],
+      [10, 0.5, 0],
+      [10, 0, NaN],
+    ]) {
+      await expect(dem.getTileElevations(z, x, y)).rejects.toThrow(RangeError);
+    }
+
+    expect(await dem.getTileElevations(10, 0, 1024)).toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("propagates HTTP errors", async () => {
+    const [x, y, z] = tileA;
+
+    mockFetch({ [tileUrl(tileA)]: 500 });
+    await expect(terrainRGB().getTileElevations(z, x, y)).rejects.toThrow("500");
+  });
+
+  test("wraps x around the antimeridian", async () => {
+    const fetch = mockFetch({});
+
+    await terrainRGB().getTileElevations(10, -1, 0);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("https://tiles.test/10/1023/0.png");
+  });
+
+  test.for([
+    { Dem: TerrainRGB, color: terrainRgb },
+    { Dem: Terrarium, color: terrarium },
+  ])("decodes $Dem.name in image row order", async ({ Dem, color }, { expect }) => {
+    const [x, y, z] = tileA;
+    const [r, g, b] = color(50);
+    const png = encode({
+      width: 3,
+      height: 2,
+      data: Uint8Array.of(
+        ...color(12.5),
+        ...color(0),
+        r,
+        g,
+        b,
+        0,
+        ...color(-25),
+        r,
+        g,
+        b,
+        128,
+        ...color(256),
+      ),
+      channels: 4,
+      depth: 8,
+    });
+
+    mockFetch({ [tileUrl([x, 2 ** z - 1 - y, z])]: png });
+
+    const dem = new Dem(template, {
+      decode: decodePng,
+      tms: true,
+      minzoom: 11,
+      sampling: "median",
+    });
+
+    expect(await dem.getTileElevations(z, x, y)).toEqual({
+      width: 3,
+      height: 2,
+      elevations: Float32Array.of(12.5, 0, NaN, -25, 50, 256),
+    });
+  });
+
+  test("shares an in-flight fetch and decode with coordinate lookups", async () => {
+    const [x, y, z] = tileA;
+    const fetch = mockFetch({
+      [tileUrl(tileA)]: toPng(
+        makeTile(2, () => terrainRgb(42)),
+        2,
+      ),
+    });
+    const decode = vi.fn(decodePng);
+    const dem = terrainRGB({ decode });
+    const [elevation, tile] = await Promise.all([
+      dem.getElevation(pixelCenter(tileA, 0, 0, 2), z),
+      dem.getTileElevations(z, x, y),
+    ]);
+
+    expect(elevation).toBe(42);
+    expect(tile?.elevations).toEqual(Float32Array.of(42, 42, 42, 42));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(decode).toHaveBeenCalledTimes(1);
+  });
+
+  test("preserves Terrarium coordinate rounding while returning fractional tile heights", async () => {
+    const [x, y, z] = tileA;
+    const fetch = mockFetch({
+      [tileUrl(tileA)]: toPng(
+        makeTile(2, () => terrarium(12.5)),
+        2,
+      ),
+    });
+    const dem = new Terrarium(template, { decode: decodePng, tileCache: new Map() });
+
+    expect(await dem.getElevation(pixelCenter(tileA, 0, 0, 2), z)).toBe(13);
+    expect((await dem.getTileElevations(z, x, y))?.elevations[0]).toBe(12.5);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("uses the configured fetch and shares cached tiles with coordinate lookups", async () => {
+    const [x, y, z] = tileA;
+    const png = toPng(
+      makeTile(2, () => terrainRgb(42)),
+      2,
+    );
+    const globalFetch = mockFetch({ [tileUrl(tileA)]: png });
+    const request = vi.fn(async (_url: string, _init: RequestInit) => new Response(png.slice()));
+    const decode = vi.fn(decodePng);
+    const headers = { Authorization: "Bearer test-token" };
+    const dem = terrainRGB({
+      decode,
+      fetch: (url) => request(url, { headers }),
+      tileCache: new Map(),
+    });
+
+    expect(await dem.getTileElevations(z, x, y)).toBeDefined();
+    expect(await dem.getElevations([pixelCenter(tileA, 0, 0, 2)], z)).toEqual([42]);
+    expect(request).toHaveBeenCalledExactlyOnceWith(tileUrl(tileA), { headers });
+    expect(globalFetch).not.toHaveBeenCalled();
+    expect(decode).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("fetching", () => {
   test("batches points by tile", async () => {
     const fetch = mockFetch({
@@ -197,12 +335,13 @@ describe("fetching", () => {
     { name: "204", route: 204 },
     { name: "empty 200", route: new Uint8Array(0) },
   ])("$name tiles are undefined and cached", async ({ route }, { expect }) => {
+    const [x, y, z] = tileA;
     const fetch = mockFetch({ [tileUrl(tileA)]: route });
     const dem = terrainRGB({ tileCache: new LRUCache({ max: 10 }) });
     const lnglat = pixelCenter(tileA, 1, 1, SIZE);
 
-    expect(await dem.getElevation(lnglat, 10)).toBeUndefined();
-    expect(await dem.getElevation(lnglat, 10)).toBeUndefined();
+    expect(await dem.getElevation(lnglat, z)).toBeUndefined();
+    expect(await dem.getTileElevations(z, x, y)).toBeUndefined();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
