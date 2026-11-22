@@ -2,7 +2,7 @@
 
 > Fork of [@watergis/terrain-rgb](https://github.com/watergis/terrain-rgb) by Jin IGARASHI, with performance improvements and additional sampling modes.
 
-Decode elevation from Terrain RGB and Terrarium raster tile sets by longitude and latitude.
+Decode elevation from Terrain RGB and Terrarium raster tile sets by longitude and latitude or by tile.
 
 ## What's different from upstream
 
@@ -56,6 +56,13 @@ const elevations = await trgb.getElevations(
   ],
   15,
 );
+
+// Read every pixel in the tile
+const tile = await trgb.getTileElevations(15, 19119, 16562);
+if (tile) {
+  const { width, height, elevations } = tile;
+  console.log(width, height, elevations[0]);
+}
 ```
 
 TMS tilesets need `tms: true`:
@@ -66,7 +73,15 @@ const trgb = new TerrainRGB(url, { tms: true });
 
 Tile size is read from each decoded image, so 256 and 512 px tilesets work alike.
 
-If a tile cannot be found (404, 204 or an empty body), the method returns `undefined`, and the miss is cached too. Other HTTP errors and undecodable images reject. Any format the browser can decode works (PNG, WebP, Mapbox `.pngraw`…), with or without an extension in the URL.
+If a tile cannot be found (404, 204 or an empty body), tile and coordinate lookups for it return `undefined`, and the miss is cached when a cache is configured. Other HTTP errors and undecodable images reject. Any format the browser can decode works (PNG, WebP, Mapbox `.pngraw`…), with or without an extension in the URL.
+
+To send authentication headers, pass a custom `fetch`:
+
+```ts
+const dem = new TerrainRGB(url, {
+  fetch: (url) => fetch(url, { headers: { Authorization: `Bearer ${token}` } }),
+});
+```
 
 ### Canvas-free decoding
 
@@ -132,15 +147,16 @@ new Terrarium(url, options?)
 
 ### `BaseTileOptions`
 
-| Option         | Type                                   | Default     | Description                              |
-| -------------- | -------------------------------------- | ----------- | ---------------------------------------- |
-| `minzoom`      | `number`                               | `5`         | Lowest zoom; requests below are clamped  |
-| `maxzoom`      | `number`                               | `15`        | Highest zoom; requests above are clamped |
-| `tms`          | `boolean`                              | `false`     | TMS (bottom-left origin) y axis          |
-| `tileCache`    | `TileCache` (e.g. `Map`, `LRUCache`)   | —           | Cache for decoded tiles, keyed by URL    |
-| `sampling`     | `"nearest" \| "median" \| "bilinear"`  | `"nearest"` | Pixel sampling strategy                  |
-| `sampleRadius` | `number`                               | `1`         | Pixel radius for median window (1 = 3x3) |
-| `decode`       | `(blob: Blob) => Promise<DecodedTile>` | canvas      | Turns a fetched tile into RGBA pixels    |
+| Option         | Type                                   | Default      | Description                                     |
+| -------------- | -------------------------------------- | ------------ | ----------------------------------------------- |
+| `minzoom`      | `number`                               | `5`          | Minimum zoom for coordinate lookups             |
+| `maxzoom`      | `number`                               | `15`         | Maximum zoom for coordinate lookups             |
+| `tms`          | `boolean`                              | `false`      | TMS (bottom-left origin) y axis                 |
+| `tileCache`    | `TileCache` (e.g. `Map`, `LRUCache`)   | —            | Cache for decoded tiles, keyed by URL           |
+| `sampling`     | `"nearest" \| "median" \| "bilinear"`  | `"nearest"`  | Pixel sampling strategy                         |
+| `sampleRadius` | `number`                               | `1`          | Pixel radius for median window (1 = 3x3)        |
+| `decode`       | `(blob: Blob) => Promise<DecodedTile>` | canvas       | Turns a fetched tile into RGBA pixels           |
+| `fetch`        | `(url: string) => Promise<Response>`   | global fetch | Fetches tile URLs, with optional custom headers |
 
 Use `sampling: "bilinear"` for a weighted interpolation of the four neighboring
 pixel heights, measured from pixel centers. Sampling crosses tile boundaries
@@ -153,6 +169,19 @@ is missing, the result is also `undefined`. `sampleRadius` only affects `median`
 
 - `getElevation([lng, lat], zoom)` → `Promise<number | undefined>`
 - `getElevations([[lng,lat], ...], zoom)` → `Promise<Array<number | undefined>>`
+- `getTileElevations(z, x, y)` → `Promise<TileElevations | undefined>`
+
+`getTileElevations` takes XYZ tile coordinates at the exact zoom supplied. With
+`tms: true`, the library flips `y` when building the URL. `x` wraps around the
+antimeridian; `y` outside the tile range returns `undefined`. Zoom must be an
+integer from 0 to 53, and `x` and `y` must be safe integers; invalid arguments
+reject with a `RangeError`. The result contains
+`width`, `height`, and a `Float32Array` called `elevations` with one height in
+metres per pixel. Index a pixel as `elevations[row * width + column]`, with row
+zero at the top. Fully transparent pixels are `NaN`. The method applies the
+format's pixel decoding directly, without Terrarium's coordinate rounding and
+independent of the `sampling` option. It shares the decoder, cache and
+in-flight requests with coordinate lookups.
 
 ## Performance
 

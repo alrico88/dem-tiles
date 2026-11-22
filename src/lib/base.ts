@@ -10,6 +10,13 @@ export interface DecodedTile {
   height: number;
 }
 
+export interface TileElevations {
+  width: number;
+  height: number;
+  /** Elevation in metres in row-major order. Pixels without data are NaN. */
+  elevations: Float32Array;
+}
+
 /**
  * Minimal cache contract, satisfied by `Map` and `LRUCache` from `lru-cache`.
  */
@@ -22,11 +29,11 @@ export interface TileCache {
 
 export interface BaseTileOptions {
   /**
-   * Lowest zoom available in the tileset. Requests below it are clamped. Default 5.
+   * Lowest zoom for coordinate lookups. Requests below it are clamped. Default 5.
    */
   minzoom?: number;
   /**
-   * Highest zoom available in the tileset. Requests above it are clamped. Default 15.
+   * Highest zoom for coordinate lookups. Requests above it are clamped. Default 15.
    */
   maxzoom?: number;
   /**
@@ -51,6 +58,10 @@ export interface BaseTileOptions {
    * Decodes a fetched tile into RGBA pixels. Defaults to the browser canvas decoder.
    */
   decode?: (blob: Blob) => Promise<DecodedTile>;
+  /**
+   * Fetches a tile URL. Defaults to the global fetch.
+   */
+  fetch?: (url: string) => Promise<Response>;
 }
 
 interface PixelRequest {
@@ -177,7 +188,9 @@ export abstract class BaseTile {
     this.sampling = options?.sampling ?? "nearest";
     this.sampleRadius = Math.max(0, Math.floor(options?.sampleRadius ?? 1));
     this.decode = options?.decode ?? decodeWithCanvas;
-    this.getTile = pMemoize((url: string) => this.fetchTile(url), {
+    const fetcher = options?.fetch ?? ((url: string) => fetch(url));
+
+    this.getTile = pMemoize((url: string) => this.fetchTile(url, fetcher), {
       cache: options?.tileCache ?? false,
     });
   }
@@ -253,9 +266,57 @@ export abstract class BaseTile {
   }
 
   /**
+   * Elevations for every pixel of an XYZ tile at its exact zoom, or undefined
+   * if the tile is missing. The result uses image row order, from the top left.
+   */
+  public async getTileElevations(
+    z: number,
+    x: number,
+    y: number,
+  ): Promise<TileElevations | undefined> {
+    if (
+      !Number.isInteger(z) ||
+      z < 0 ||
+      z > 53 ||
+      !Number.isSafeInteger(x) ||
+      !Number.isSafeInteger(y)
+    ) {
+      throw new RangeError(
+        "Expected an integer zoom from 0 to 53 and safe integer tile coordinates",
+      );
+    }
+
+    const tile = await this.tileAt(z, x, y);
+
+    if (tile === MISSING_TILE) {
+      return undefined;
+    }
+
+    const { width, height, data } = tile;
+    const elevations = new Float32Array(width * height);
+
+    for (let index = 0; index < elevations.length; index += 1) {
+      const offset = index * 4;
+      const alpha = data[offset + 3];
+
+      elevations[index] =
+        alpha === 0
+          ? NaN
+          : this.calcTilePixel(data[offset], data[offset + 1], data[offset + 2], alpha);
+    }
+
+    return { width, height, elevations };
+  }
+
+  /**
    * Elevation encoded by an RGBA pixel. Implemented by each encoding.
    */
   protected abstract calc(r: number, g: number, b: number, a: number): number;
+
+  /** Elevation for a tile pixel, before any coordinate-specific rounding. */
+  protected calcTilePixel(r: number, g: number, b: number, a: number): number {
+    return this.calc(r, g, b, a);
+  }
 
   /**
    * Tile (x, y) at a zoom, wrapping x at the antimeridian. Requests within one
@@ -265,7 +326,7 @@ export abstract class BaseTile {
     zoom: number,
     x: number,
     y: number,
-    pending: Map<number, Promise<DecodedTile>>,
+    pending?: Map<number, Promise<DecodedTile>>,
   ): Promise<DecodedTile> {
     const tiles = 2 ** zoom;
 
@@ -273,9 +334,10 @@ export abstract class BaseTile {
       return Promise.resolve(MISSING_TILE);
     }
 
-    const wx = ((x % tiles) + tiles) % tiles;
+    const remainder = x % tiles;
+    const wx = remainder < 0 ? remainder + tiles : remainder;
     const key = y * tiles + wx;
-    let tile = pending.get(key);
+    let tile = pending?.get(key);
 
     if (!tile) {
       tile = this.getTile(
@@ -285,7 +347,7 @@ export abstract class BaseTile {
           y: this.tms ? tiles - 1 - y : y,
         }),
       );
-      pending.set(key, tile);
+      pending?.set(key, tile);
     }
 
     return tile;
@@ -398,8 +460,11 @@ export abstract class BaseTile {
   /**
    * Fetches and decodes a tile. 404, 204 and empty responses yield `MISSING_TILE`.
    */
-  private async fetchTile(url: string): Promise<DecodedTile> {
-    const res = await fetch(url);
+  private async fetchTile(
+    url: string,
+    fetcher: (url: string) => Promise<Response>,
+  ): Promise<DecodedTile> {
+    const res = await fetcher(url);
 
     if (res.status === 404 || res.status === 204) {
       return MISSING_TILE;

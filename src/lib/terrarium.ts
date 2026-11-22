@@ -8,6 +8,10 @@ export class Terrarium extends BaseTile {
    * https://github.com/tilezen/joerd/blob/master/docs/formats.md#terrarium
    */
   protected calc(r: number, g: number, b: number): number {
-    return Math.round(r * 256 + g + b / 256 - 32768);
+    return Math.round(this.calcTilePixel(r, g, b));
+  }
+
+  protected calcTilePixel(r: number, g: number, b: number): number {
+    return r * 256 + g + b / 256 - 32768;
   }
 }
